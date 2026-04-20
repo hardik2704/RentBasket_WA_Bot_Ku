@@ -45,8 +45,11 @@ def _init_once():
         from firebase_admin import credentials, firestore
 
         if not firebase_admin._apps:
-            if os.path.exists(FIREBASE_CREDENTIALS_PATH):
-                cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
+            cred_path = FIREBASE_CREDENTIALS_PATH
+            log.info(f"Firestore: checking credentials at {cred_path}")
+            if os.path.exists(cred_path):
+                log.info(f"Firestore: credentials found, initializing")
+                cred = credentials.Certificate(cred_path)
                 firebase_admin.initialize_app(cred)
             else:
                 firebase_admin.initialize_app()  # ADC (GOOGLE_APPLICATION_CREDENTIALS env)

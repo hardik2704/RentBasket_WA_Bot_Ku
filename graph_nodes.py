@@ -69,9 +69,24 @@ LATEST_REVIEWS_TEXT = (
     "RentBasket - Furnishing Homes, Effortlessly."
 )
 
+WHY_RENTBASKET_TEXT = (
+    "Why RentBasket Specifically?\n\n"
+    "We're not just a rental service — we're your comfort partners:\n\n"
+    "4.9 Google Star Rating\n"
+    "Check out real reviews from our happy customers!\n\n"
+    "Hyper-Localization\n"
+    "We know your city better than anyone, so we get you the best people and fastest service.\n\n"
+    "95% Full Security Refund\n"
+    "We're blessed with customers who treat our products beautifully.\n\n"
+    "Customer-First Approach\n"
+    "Our reviews speak louder than words."
+)
+
 BTN_HOW_RENTING_WORKS = {"id": "HOW_RENTING_WORKS", "title": "How Renting Works?"}
+BTN_WHY_RENTBASKET = {"id": "WHY_RENTBASKET", "title": "Why RentBasket?"}
 BTN_CHECKOUT = {"id": "CHECKOUT", "title": "Checkout"}
-BTN_REVIEWS = {"id": "REVIEWS", "title": "Reviews"}
+BTN_REVIEWS = {"id": "REVIEWS", "title": "Latest Reviews"}
+BTN_SHARE_LIST = {"id": "SHARE_LIST", "title": "I'll share my list"}
 BTN_DUR_3 = {"id": "DUR_3", "title": "3-Short & Sweet"}
 BTN_DUR_6 = {"id": "DUR_6", "title": "6-Affordable"}
 BTN_DUR_12 = {"id": "DUR_12", "title": "12-Max Discount"}
@@ -145,8 +160,12 @@ def classify_inbound(state: KuState) -> dict[str, Any]:
     if i_type == "interactive":
         if i_id == "HOW_RENTING_WORKS":
             branch = "how_works"
+        elif i_id == "WHY_RENTBASKET":
+            branch = "why_rentbasket"
         elif i_id == "REVIEWS":
             branch = "reviews"
+        elif i_id == "SHARE_LIST":
+            branch = "share_list"
         elif i_id in ("DUR_3", "DUR_6", "DUR_12"):
             state["duration"] = {"DUR_3": 3, "DUR_6": 6, "DUR_12": 12}[i_id]
             branch = "build_cart"
@@ -185,14 +204,39 @@ def greeting(state: KuState) -> dict[str, Any]:
 
 
 def how_works(state: KuState) -> dict[str, Any]:
-    _queue_text(state, HOW_RENTING_WORKS_TEXT)
+    _queue_buttons(
+        state,
+        HOW_RENTING_WORKS_TEXT,
+        [BTN_WHY_RENTBASKET, BTN_REVIEWS, BTN_SHARE_LIST],
+    )
+    return state
+
+
+def why_rentbasket(state: KuState) -> dict[str, Any]:
+    _queue_buttons(
+        state,
+        WHY_RENTBASKET_TEXT,
+        [BTN_REVIEWS, BTN_SHARE_LIST],
+    )
     return state
 
 
 def reviews(state: KuState) -> dict[str, Any]:
     _queue_text(state, LATEST_REVIEWS_TEXT, preview_url=True)
-    # Follow-up with a single Checkout button
-    _queue_buttons(state, "Ready to proceed?", [BTN_CHECKOUT])
+    _queue_buttons(state, "Ready to proceed?", [BTN_CHECKOUT, BTN_SHARE_LIST])
+    return state
+
+
+def share_list(state: KuState) -> dict[str, Any]:
+    """User tapped 'I'll share my list' — prompt them for items and reset to GREETED."""
+    _queue_text(
+        state,
+        "*Please share the items you're looking for.*\n\n"
+        "Example : 2x Double Beds, 1x Washing Machine, 1x 5 Seater Sofa\n\n"
+        "You can also send a *Voice Note*.\n\n"
+        "I'll share the complete cart right away.",
+    )
+    state["stage"] = "GREETED"
     return state
 
 
@@ -382,9 +426,16 @@ def write_firestore(state: KuState) -> dict[str, Any]:
     if state.get("duration"):
         highlights["preferred_duration_months"] = int(state["duration"])
     if state.get("items"):
+        items_list = state["items"]
         highlights["last_items_raw"] = ", ".join(
-            f"{i.get('qty',1)}x {i.get('name')}" for i in state["items"]
+            f"{i.get('qty',1)}x {i.get('name')}" for i in items_list
         )
+        # Always persist structured items so the next turn can hydrate them
+        # (critical: duration button click needs items from the previous turn)
+        highlights["last_cart_items"] = [
+            {"product_id": it["product_id"], "qty": it.get("qty", 1), "name": it.get("name", "")}
+            for it in items_list if it.get("product_id")
+        ]
     if state.get("cart"):
         c = state["cart"]
         highlights["last_cart_items"] = [

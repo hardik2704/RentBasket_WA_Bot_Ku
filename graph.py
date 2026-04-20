@@ -32,7 +32,9 @@ def _build() -> StateGraph:
     g.add_node("classify_inbound", gn.classify_inbound)
     g.add_node("greeting", gn.greeting)
     g.add_node("how_works", gn.how_works)
+    g.add_node("why_rentbasket", gn.why_rentbasket)
     g.add_node("reviews", gn.reviews)
+    g.add_node("share_list", gn.share_list)
     g.add_node("extract_items", gn.extract_items)
     g.add_node("duration_prompt", gn.duration_prompt)
     g.add_node("build_cart", gn.build_cart_node)
@@ -47,7 +49,9 @@ def _build() -> StateGraph:
         {
             "greeting": "greeting",
             "how_works": "how_works",
+            "why_rentbasket": "why_rentbasket",
             "reviews": "reviews",
+            "share_list": "share_list",
             "extract_items": "extract_items",
             "build_cart": "build_cart",
             "checkout": "checkout",
@@ -65,8 +69,8 @@ def _build() -> StateGraph:
         },
     )
 
-    for node in ("greeting", "how_works", "reviews", "duration_prompt",
-                 "build_cart", "checkout", "fallback_discount"):
+    for node in ("greeting", "how_works", "why_rentbasket", "reviews", "share_list",
+                 "duration_prompt", "build_cart", "checkout", "fallback_discount"):
         g.add_edge(node, "write_firestore")
     g.add_edge("write_firestore", END)
 

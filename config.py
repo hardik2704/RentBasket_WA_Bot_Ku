@@ -58,7 +58,28 @@ def _mint_jwt() -> str:
 RENTBASKET_JWT = os.getenv("RENTBASKET_JWT") or _mint_jwt()
 
 # ---------- Firestore ----------
-FIREBASE_CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "./firebase-credentials.json")
+# Support two modes:
+# 1. FIREBASE_CREDENTIALS_PATH env var (path to JSON file)
+# 2. FIREBASE_CREDENTIALS_JSON env var (base64-encoded JSON)
+# If neither set, fall back to default path
+_creds_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
+_creds_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
+if _creds_json:
+    # Decode and write to temp location
+    import base64
+    import json
+    import tempfile
+    try:
+        decoded = base64.b64decode(_creds_json).decode('utf-8')
+        creds_obj = json.loads(decoded)
+        _tmpdir = tempfile.gettempdir()
+        FIREBASE_CREDENTIALS_PATH = os.path.join(_tmpdir, "firebase-creds.json")
+        with open(FIREBASE_CREDENTIALS_PATH, "w") as f:
+            json.dump(creds_obj, f)
+    except Exception as e:
+        FIREBASE_CREDENTIALS_PATH = _creds_path or "./firebase-credentials.json"
+else:
+    FIREBASE_CREDENTIALS_PATH = _creds_path or "./firebase-credentials.json"
 SESSION_GAP_HOURS = int(os.getenv("SESSION_GAP_HOURS", "24"))
 
 # ---------- Bot ----------
