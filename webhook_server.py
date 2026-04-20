@@ -40,7 +40,18 @@ log = logging.getLogger("ku")
 app = Flask(__name__)
 
 # Warm the graph at import so the first request isn't slow.
+print("[boot] Compiling LangGraph...", flush=True)
 GRAPH = get_graph()
+print("[boot] LangGraph compiled.", flush=True)
+
+# Warm Firestore at import so connection status is visible in deploy logs
+# (not deferred to first webhook, which keeps the user blind until a real message).
+print("[boot] Warming Firestore connection...", flush=True)
+firestore_store.warm_init()
+print(
+    f"[boot] Firestore available={firestore_store.is_available()}. Server ready.",
+    flush=True,
+)
 
 _executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
@@ -85,7 +96,14 @@ def _is_duplicate(wa_message_id: str | None) -> bool:
 
 @app.get("/healthz")
 def healthz():
-    return "ok", 200
+    from config import FIREBASE_CREDENTIALS_PATH, FIREBASE_CREDENTIALS_SOURCE
+    return jsonify({
+        "status": "ok",
+        "firestore_available": firestore_store.is_available(),
+        "firestore_creds_source": FIREBASE_CREDENTIALS_SOURCE,
+        "firestore_creds_path": FIREBASE_CREDENTIALS_PATH,
+        "firestore_creds_path_exists": os.path.exists(FIREBASE_CREDENTIALS_PATH),
+    }), 200
 
 
 @app.get("/catalogue")

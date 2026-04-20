@@ -46,20 +46,38 @@ def _init_once():
 
         if not firebase_admin._apps:
             cred_path = FIREBASE_CREDENTIALS_PATH
-            log.info(f"Firestore: checking credentials at {cred_path}")
+            print(f"[firestore] Initializing — checking credentials at: {cred_path}", flush=True)
             if os.path.exists(cred_path):
-                log.info(f"Firestore: credentials found, initializing")
+                print(f"[firestore] Credentials file found, loading certificate", flush=True)
                 cred = credentials.Certificate(cred_path)
                 firebase_admin.initialize_app(cred)
+                print(f"[firestore] firebase_admin initialized from certificate", flush=True)
             else:
-                firebase_admin.initialize_app()  # ADC (GOOGLE_APPLICATION_CREDENTIALS env)
+                print(
+                    f"[firestore] Credentials file NOT found at {cred_path}, "
+                    f"trying Application Default Credentials (ADC)",
+                    flush=True,
+                )
+                firebase_admin.initialize_app()
+                print(f"[firestore] firebase_admin initialized via ADC", flush=True)
         _client = firestore.client()
         _available = True
-        log.info("Firestore initialised.")
+        print(f"[firestore] CONNECTED SUCCESSFULLY — client ready", flush=True)
     except Exception as e:
-        log.warning("Firestore init failed (continuing without persistence): %s", e)
+        print(f"[firestore] INIT FAILED (continuing without persistence): {type(e).__name__}: {e}", flush=True)
         _client = None
         _available = False
+
+
+def is_available() -> bool:
+    """Public health-check accessor. Runs init if not already done."""
+    _init_once()
+    return _available
+
+
+def warm_init() -> None:
+    """Call from webhook server at startup so logs appear on boot instead of first request."""
+    _init_once()
 
 
 def _fs():

@@ -58,28 +58,83 @@ def _mint_jwt() -> str:
 RENTBASKET_JWT = os.getenv("RENTBASKET_JWT") or _mint_jwt()
 
 # ---------- Firestore ----------
-# Support two modes:
-# 1. FIREBASE_CREDENTIALS_PATH env var (path to JSON file)
-# 2. FIREBASE_CREDENTIALS_JSON env var (base64-encoded JSON)
-# If neither set, fall back to default path
-_creds_path = os.getenv("FIREBASE_CREDENTIALS_PATH")
+# Three supported modes (checked in order):
+# 1. FIREBASE_CREDENTIALS_JSON env var — base64-encoded JSON (recommended for Render)
+# 2. FIREBASE_CREDENTIALS_PATH env var — path to JSON file
+# 3. GOOGLE_APPLICATION_CREDENTIALS env var — standard Google ADC path
+# 4. Fallback: ./firebase-credentials.json (local dev)
 _creds_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
+_creds_path_explicit = os.getenv("FIREBASE_CREDENTIALS_PATH")
+_creds_path_google = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+FIREBASE_CREDENTIALS_PATH = "./firebase-credentials.json"
+FIREBASE_CREDENTIALS_SOURCE = "default_path"
+
 if _creds_json:
-    # Decode and write to temp location
     import base64
     import json
     import tempfile
     try:
-        decoded = base64.b64decode(_creds_json).decode('utf-8')
+        # Strip whitespace/newlines and fix missing padding (common copy-paste issues)
+        cleaned = "".join(_creds_json.split())
+        padding_needed = (-len(cleaned)) % 4
+        if padding_needed:
+            cleaned += "=" * padding_needed
+        decoded_bytes = base64.b64decode(cleaned)
+        # Value may already be JSON (user pasted raw JSON into the env var by mistake)
+        if decoded_bytes[:1] == b"{":
+            decoded = decoded_bytes.decode("utf-8")
+        else:
+            decoded = decoded_bytes.decode("utf-8")
         creds_obj = json.loads(decoded)
         _tmpdir = tempfile.gettempdir()
         FIREBASE_CREDENTIALS_PATH = os.path.join(_tmpdir, "firebase-creds.json")
         with open(FIREBASE_CREDENTIALS_PATH, "w") as f:
             json.dump(creds_obj, f)
+        FIREBASE_CREDENTIALS_SOURCE = "env_base64_json"
+        print(
+            f"[config] Firebase creds decoded from FIREBASE_CREDENTIALS_JSON -> "
+            f"{FIREBASE_CREDENTIALS_PATH} (project_id={creds_obj.get('project_id','?')}, "
+            f"client_email={creds_obj.get('client_email','?')})",
+            flush=True,
+        )
     except Exception as e:
-        FIREBASE_CREDENTIALS_PATH = _creds_path or "./firebase-credentials.json"
+        # Maybe the user pasted raw JSON directly (not base64). Try that.
+        try:
+            creds_obj = json.loads(_creds_json)
+            import tempfile as _tf
+            _tmpdir = _tf.gettempdir()
+            FIREBASE_CREDENTIALS_PATH = os.path.join(_tmpdir, "firebase-creds.json")
+            with open(FIREBASE_CREDENTIALS_PATH, "w") as f:
+                json.dump(creds_obj, f)
+            FIREBASE_CREDENTIALS_SOURCE = "env_raw_json"
+            print(
+                f"[config] Firebase creds parsed as raw JSON (not base64) -> "
+                f"{FIREBASE_CREDENTIALS_PATH} (project_id={creds_obj.get('project_id','?')})",
+                flush=True,
+            )
+        except Exception as e2:
+            print(
+                f"[config] ERROR decoding FIREBASE_CREDENTIALS_JSON. "
+                f"Base64 error: {type(e).__name__}: {e}. "
+                f"JSON error: {type(e2).__name__}: {e2}. "
+                f"Hint: value must be base64(service_account.json). "
+                f"On macOS: cat firebase-credentials.json | base64 | tr -d '\\n'",
+                flush=True,
+            )
+            FIREBASE_CREDENTIALS_PATH = _creds_path_explicit or _creds_path_google or "./firebase-credentials.json"
+            FIREBASE_CREDENTIALS_SOURCE = "fallback_after_decode_error"
+elif _creds_path_explicit:
+    FIREBASE_CREDENTIALS_PATH = _creds_path_explicit
+    FIREBASE_CREDENTIALS_SOURCE = "env_path"
+    print(f"[config] Firebase creds path from FIREBASE_CREDENTIALS_PATH: {FIREBASE_CREDENTIALS_PATH}", flush=True)
+elif _creds_path_google:
+    FIREBASE_CREDENTIALS_PATH = _creds_path_google
+    FIREBASE_CREDENTIALS_SOURCE = "env_google_adc"
+    print(f"[config] Firebase creds path from GOOGLE_APPLICATION_CREDENTIALS: {FIREBASE_CREDENTIALS_PATH}", flush=True)
 else:
-    FIREBASE_CREDENTIALS_PATH = _creds_path or "./firebase-credentials.json"
+    print(f"[config] No Firebase creds env var set, falling back to {FIREBASE_CREDENTIALS_PATH}", flush=True)
+
 SESSION_GAP_HOURS = int(os.getenv("SESSION_GAP_HOURS", "24"))
 
 # ---------- Bot ----------
