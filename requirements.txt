@@ -1,0 +1,20 @@
+flask>=3.0.0
+gunicorn>=21.2.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+openai>=1.0.0
+PyJWT>=2.8.0
+
+# Firestore
+firebase-admin>=6.5.0
+google-cloud-firestore>=2.14.0
+
+# LangGraph (agentic core)
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langchain-community>=0.3.0
+langchain-text-splitters>=0.3.0
+
+# KB retriever
+chromadb>=0.5.0
