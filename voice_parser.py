@@ -49,22 +49,34 @@ def transcribe(audio_bytes: bytes, filename: str = "voice_note.ogg") -> str:
 
 
 _DURATION_RE = re.compile(
-    r"(\d+)\s*(?:months?|mo\b|m\b)|(\d+)\s*(?:years?|yr\b|y\b)",
+    r"(\d+)\s*(?:months?|mo\b|m\b)|(\d+)\s*(?:years?|yr\b|y\b)|(\d+)\s*(?:days?|d\b)",
     re.IGNORECASE,
 )
 
 
-def _regex_duration(text: str) -> int | None:
+def _regex_duration(text: str) -> tuple[int | None, str | None]:
+    """Returns (duration_value, unit) where unit is 'months' or 'days'."""
     if not text:
-        return None
+        return None, None
     m = _DURATION_RE.search(text)
     if not m:
-        return None
+        return None, None
     if m.group(1):
+        # months or years
         months = int(m.group(1))
-    else:
+        if 1 <= months <= 36:
+            return months, "months"
+    elif m.group(2):
+        # years
         months = int(m.group(2)) * 12
-    return months if 1 <= months <= 36 else None
+        if 1 <= months <= 36:
+            return months, "months"
+    elif m.group(3):
+        # days
+        days = int(m.group(3))
+        if 1 <= days <= 730:  # up to 2 years in days
+            return days, "days"
+    return None, None
 
 
 def _catalogue_for_prompt() -> str:
@@ -76,12 +88,13 @@ def _catalogue_for_prompt() -> str:
 _SYS_PROMPT = """You extract rental cart intent from a short user message.
 
 Return ONLY a JSON object with this exact shape:
-{"items": [{"product_id": <int>, "qty": <int>}], "duration_months": <int or null>}
+{"items": [{"product_id": <int>, "qty": <int>}], "duration": <int or null>, "duration_unit": <"months"|"days"|null>}
 
 Rules:
 - `product_id` MUST be chosen from the catalogue below (exact id). If a requested item doesn't match any catalogue entry, skip it.
 - `qty` defaults to 1 if not stated. Must be a positive integer.
-- `duration_months` is an integer 1-36. Only fill it if the user explicitly said a duration in the same message. If they said "for a year" -> 12. If unclear or not mentioned, return null.
+- `duration` is an integer 1-36 (months) or 1-730 (days). Only fill it if the user explicitly said a duration in the same message. If they said "for a year" -> 12 months. If they said "6 days" -> 6 days.
+- `duration_unit` is "months" or "days" (required if duration is set, null otherwise).
 - Parse Hindi / Hinglish / English freely.
 - Return NO prose. Only the JSON object.
 
@@ -91,11 +104,11 @@ Catalogue (id: name):
 
 
 def extract_intent(text: str) -> dict[str, Any]:
-    """Returns {"items": [{product_id, qty, name}], "duration_months": int|None}."""
+    """Returns {"items": [{product_id, qty, name}], "duration": int|None, "duration_unit": str|None}."""
     if not text or not text.strip():
-        return {"items": [], "duration_months": None}
+        return {"items": [], "duration": None, "duration_unit": None}
 
-    regex_dur = _regex_duration(text)
+    regex_dur, regex_unit = _regex_duration(text)
 
     try:
         resp = _client().chat.completions.create(
@@ -111,7 +124,7 @@ def extract_intent(text: str) -> dict[str, Any]:
         data = json.loads(raw)
     except Exception as e:
         log.exception("extract_intent failed: %s", e)
-        return {"items": [], "duration_months": regex_dur}
+        return {"items": [], "duration": regex_dur, "duration_unit": regex_unit}
 
     items: list[dict[str, Any]] = []
     for it in (data.get("items") or []):
@@ -123,16 +136,26 @@ def extract_intent(text: str) -> dict[str, Any]:
         except (TypeError, ValueError):
             continue
 
-    duration = data.get("duration_months")
+    duration = data.get("duration")
+    unit = data.get("duration_unit")
+
     try:
         duration = int(duration) if duration is not None else None
-        if duration is not None and not (1 <= duration <= 36):
-            duration = None
+        if duration is not None:
+            # Validate based on unit
+            if unit == "days" and not (1 <= duration <= 730):
+                duration = None
+                unit = None
+            elif unit == "months" and not (1 <= duration <= 36):
+                duration = None
+                unit = None
     except (TypeError, ValueError):
         duration = None
+        unit = None
 
     # Prefer LLM duration; fall back to the regex capture if it missed.
     if duration is None:
         duration = regex_dur
+        unit = regex_unit
 
-    return {"items": items, "duration_months": duration}
+    return {"items": items, "duration": duration, "duration_unit": unit}

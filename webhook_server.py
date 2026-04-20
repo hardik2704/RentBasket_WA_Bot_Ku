@@ -255,6 +255,7 @@ def _handle_async(parsed: dict[str, Any]) -> None:
             "wa_message_id": wa_id,
             "items": highlights.get("last_cart_items") or [],
             "duration": highlights.get("preferred_duration_months"),
+            "duration_unit": highlights.get("preferred_duration_unit"),
             "last_cart_link": highlights.get("last_cart_link"),
             "reply": [],
         }

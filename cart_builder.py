@@ -47,8 +47,8 @@ def _inr(n: int | float) -> str:
     return ("-" if n < 0 else "") + out
 
 
-def build_cart(items: list[dict], duration: int) -> dict[str, Any] | None:
-    """Compute per-line + total pricing for `items` at `duration` months.
+def build_cart(items: list[dict], duration: int, unit: str = "months") -> dict[str, Any] | None:
+    """Compute per-line + total pricing for `items` at `duration` in given unit (months/days).
 
     Returns None if no valid priced items (caller should fallback).
     """
@@ -66,7 +66,7 @@ def build_cart(items: list[dict], duration: int) -> dict[str, Any] | None:
             qty = max(1, int(it.get("qty", 1)))
         except (TypeError, ValueError, KeyError):
             continue
-        mrp = calculate_rent(pid, duration, unit="months")
+        mrp = calculate_rent(pid, duration, unit=unit)
         if mrp is None:
             log.warning("No price for product_id=%s duration=%s", pid, duration)
             continue
@@ -112,9 +112,10 @@ def build_cart(items: list[dict], duration: int) -> dict[str, Any] | None:
     }
 
 
-def format_cart_text(cart: dict) -> str:
+def format_cart_text(cart: dict, unit: str = "months") -> str:
     duration = cart["duration"]
-    header = f"*Step 2 of 3: Cart Finalisation*\n\nYour Draft Cart: {duration} Month Rental\n\n"
+    unit_label = "Month" if unit == "months" else "Day"
+    header = f"*Step 2 of 3: Cart Finalisation*\n\nYour Draft Cart: {duration} {unit_label} Rental\n\n"
 
     line_strs = []
     for line in cart["lines"]:
@@ -134,10 +135,11 @@ def format_cart_text(cart: dict) -> str:
 
     body = "\n".join(line_strs)
 
+    unit_suffix = "/mo" if unit == "months" else "/day"
     totals = (
         f"\n\nMonthly Total: Rs. {_inr(cart['disc_monthly_total'])}  "
-        f"(saving Rs. {_inr(cart['saving_per_month'])}/mo vs MRP)\n"
-        f"Total saving over {duration} months: Rs. {_inr(cart['total_saving'])}"
+        f"(saving Rs. {_inr(cart['saving_per_month'])}{unit_suffix} vs MRP)\n"
+        f"Total saving over {duration} {unit_label.lower()}s: Rs. {_inr(cart['total_saving'])}"
     )
 
     msg = header + body + totals
@@ -152,7 +154,7 @@ def format_cart_text(cart: dict) -> str:
     return msg
 
 
-def build_cart_link(items: list[dict], duration: int, *, fallback: bool = False) -> str:
+def build_cart_link(items: list[dict], duration: int, *, unit: str = "months", fallback: bool = False) -> str:
     """URL that opens the curated cart on the RentBasket checkout site."""
     payload = []
     for it in items or []:

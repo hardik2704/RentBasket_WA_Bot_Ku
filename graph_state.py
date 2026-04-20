@@ -31,7 +31,8 @@ class KuState(TypedDict, total=False):
     # Extracted context
     transcript: str | None
     items: list[dict[str, Any]]      # [{product_id, qty, name}]
-    duration: int | None             # months
+    duration: int | None             # numeric duration value
+    duration_unit: str | None        # "months" or "days"
 
     # Cart
     cart: dict[str, Any] | None
@@ -44,6 +45,9 @@ class KuState(TypedDict, total=False):
     fallback_triggered: bool
     fallback_reason: str | None
     kb_hit: str | None
+
+    # Rating
+    rating: str | None               # "yes", "meh", "no" post-checkout feedback
 
     # Routing
     branch: str | None               # set by classify_inbound

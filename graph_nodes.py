@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import re
+
+import kb_retriever
 from typing import Any
 
 import cart_builder
@@ -89,6 +91,9 @@ BTN_REVIEWS = {"id": "REVIEWS", "title": "Latest Reviews"}
 BTN_SHARE_LIST = {"id": "SHARE_LIST", "title": "I'll share my list"}
 BTN_DUR_3 = {"id": "DUR_3", "title": "3-Short & Sweet"}
 BTN_DUR_6 = {"id": "DUR_6", "title": "6-Affordable"}
+BTN_RATING_YES = {"id": "RATING_YES", "title": "Yes, great"}
+BTN_RATING_MEH = {"id": "RATING_MEH", "title": "Somewhat"}
+BTN_RATING_NO = {"id": "RATING_NO", "title": "Not really"}
 BTN_DUR_12 = {"id": "DUR_12", "title": "12-Max Discount"}
 
 GREETING_RE = re.compile(
@@ -106,6 +111,12 @@ FALLBACK_RECOVERY_TEXT = (
     "Maybe I am not able to help you with this, so I would want to give you "
     "5% additional discount and use this link to create your cart! You can "
     "always reachout to me if you need anything!"
+)
+
+SALES_CONTACT_TEXT = (
+    "Or reach out to our sales team directly:\n"
+    "Call/WhatsApp: +91 9958187021\n"
+    "You can also browse at rentbasket.com"
 )
 
 
@@ -171,6 +182,8 @@ def classify_inbound(state: KuState) -> dict[str, Any]:
             branch = "build_cart"
         elif i_id == "CHECKOUT":
             branch = "checkout"
+        elif i_id in ("RATING_YES", "RATING_MEH", "RATING_NO"):
+            branch = "rating"
         else:
             state["fallback_reason"] = f"unknown_button:{i_id}"
             branch = "fallback_discount"
@@ -179,7 +192,7 @@ def classify_inbound(state: KuState) -> dict[str, Any]:
     elif i_type == "text":
         if GREETING_RE.match(text) and (stage == "NEW" or stage == "GREETED" or not stage):
             branch = "greeting"
-        elif stage in ("NEW", "GREETED", "ITEMS_CAPTURED"):
+        elif stage in ("NEW", "GREETED", "ITEMS_CAPTURED", "CART_SHOWN", "CHECKED_OUT"):
             branch = "extract_items"
         else:
             state["fallback_reason"] = f"off_script_text_at_{stage}"
@@ -267,27 +280,42 @@ def extract_items(state: KuState) -> dict[str, Any]:
     # 2. Extract items + optional duration in a single LLM call
     intent = voice_parser.extract_intent(source_text)
     items = intent.get("items") or []
-    duration = intent.get("duration_months")
-
-    if not items:
-        state["fallback_reason"] = "no_items_matched"
-        return state
+    duration = intent.get("duration")
+    duration_unit = intent.get("duration_unit")
 
     # Merge with any pre-existing items if user is adding on.
     prev = state.get("items") or []
-    if prev:
-        merged: dict[int, dict] = {it["product_id"]: dict(it) for it in prev}
-        for it in items:
-            pid = it["product_id"]
-            if pid in merged:
-                merged[pid]["qty"] = int(merged[pid].get("qty", 1)) + int(it.get("qty", 1))
-            else:
-                merged[pid] = it
-        items = list(merged.values())
+    if items:
+        if prev:
+            merged: dict[int, dict] = {it["product_id"]: dict(it) for it in prev}
+            for it in items:
+                pid = it["product_id"]
+                if pid in merged:
+                    merged[pid]["qty"] = int(merged[pid].get("qty", 1)) + int(it.get("qty", 1))
+                else:
+                    merged[pid] = it
+            items = list(merged.values())
+        state["items"] = items
+    elif prev and duration:
+        # Duration-only message (e.g. "8 months") with prior items already
+        # captured — skip items confirmation and let after_extract route
+        # straight to build_cart.
+        items = prev  # use existing items for display
+        state["duration"] = int(duration)
+        if duration_unit:
+            state["duration_unit"] = duration_unit
+        state["stage"] = "ITEMS_CAPTURED"
+        return state
+    elif not prev:
+        # No new items AND no prior items — fallback
+        state["fallback_reason"] = "no_items_matched"
+        return state
+    # else: no new items but prior items exist (hydrated) — keep them, continue below
 
-    state["items"] = items
     if duration:
         state["duration"] = int(duration)
+        if duration_unit:
+            state["duration_unit"] = duration_unit
 
     # 3. Confirm what we found
     _queue_text(state, cart_builder.format_items_found(items))
@@ -312,24 +340,25 @@ def duration_prompt(state: KuState) -> dict[str, Any]:
 def build_cart_node(state: KuState) -> dict[str, Any]:
     items = state.get("items") or []
     duration = state.get("duration")
+    unit = state.get("duration_unit") or "months"
     if not items or not duration:
         state["fallback_reason"] = "build_cart_missing_context"
         _fallback_inline(state)
         return state
 
-    cart = cart_builder.build_cart(items, int(duration))
+    cart = cart_builder.build_cart(items, int(duration), unit=unit)
     if not cart:
         state["fallback_reason"] = "build_cart_returned_none"
         _fallback_inline(state)
         return state
 
     state["cart"] = cart
-    state["last_cart_link"] = cart_builder.build_cart_link(items, int(duration))
+    state["last_cart_link"] = cart_builder.build_cart_link(items, int(duration), unit=unit)
     state["stage"] = "CART_SHOWN"
 
     _queue_buttons(
         state,
-        cart_builder.format_cart_text(cart),
+        cart_builder.format_cart_text(cart, unit=unit),
         [BTN_CHECKOUT, BTN_REVIEWS],
     )
     return state
@@ -340,9 +369,10 @@ def build_cart_node(state: KuState) -> dict[str, Any]:
 def checkout(state: KuState) -> dict[str, Any]:
     items = state.get("items") or []
     duration = state.get("duration") or 12
+    unit = state.get("duration_unit") or "months"
     # Rebuild link in case it wasn't stored (e.g. reviews -> checkout path)
     if not state.get("last_cart_link"):
-        state["last_cart_link"] = cart_builder.build_cart_link(items, int(duration))
+        state["last_cart_link"] = cart_builder.build_cart_link(items, int(duration), unit=unit)
 
     _queue_text(
         state,
@@ -350,7 +380,24 @@ def checkout(state: KuState) -> dict[str, Any]:
         "your order through this curated Cart with the Product Pics:",
     )
     _queue_text(state, state["last_cart_link"], preview_url=True)
+    _queue_buttons(
+        state,
+        "Did Ku help you today?",
+        [BTN_RATING_YES, BTN_RATING_MEH, BTN_RATING_NO],
+    )
     state["stage"] = "CHECKED_OUT"
+    return state
+
+
+# -- rating handler --
+
+def rating(state: KuState) -> dict[str, Any]:
+    inbound = state.get("inbound") or {}
+    i_id = inbound.get("interactive_id")
+    rating_map = {"RATING_YES": "yes", "RATING_MEH": "meh", "RATING_NO": "no"}
+    rating_value = rating_map.get(i_id, "unknown")
+    state["rating"] = rating_value
+    _queue_text(state, "Thanks for the feedback! It helps Ku get better.")
     return state
 
 
@@ -368,7 +415,18 @@ def _fallback_inline(state: KuState) -> None:
 
 
 def fallback_discount(state: KuState) -> dict[str, Any]:
+    # Feature 1: If the user asked a question, try the KB first
+    inbound = state.get("inbound") or {}
+    text = (inbound.get("text") or "").strip()
+    if text and QUESTION_RE.match(text):
+        kb_answer = kb_retriever.search(text, k=3)
+        if kb_answer:
+            state["kb_hit"] = kb_answer
+            _queue_text(state, kb_answer)
+
+    # Feature 2: 5% discount link + sales contact
     _fallback_inline(state)
+    _queue_text(state, SALES_CONTACT_TEXT)
     # Stage unchanged — we don't want to lock the user out of recovery.
     return state
 
@@ -423,8 +481,12 @@ def write_firestore(state: KuState) -> dict[str, Any]:
         highlights["ever_clicked_reviews"] = True
     if state.get("stage") == "CHECKED_OUT":
         highlights["ever_reached_checkout"] = True
+    if state.get("rating"):
+        highlights["last_rating"] = state["rating"]
     if state.get("duration"):
         highlights["preferred_duration_months"] = int(state["duration"])
+        if state.get("duration_unit"):
+            highlights["preferred_duration_unit"] = state["duration_unit"]
     if state.get("items"):
         items_list = state["items"]
         highlights["last_items_raw"] = ", ".join(
@@ -455,6 +517,13 @@ def write_firestore(state: KuState) -> dict[str, Any]:
 
     if highlights:
         firestore_store.update_highlights(phone, highlights)
+
+    # Append rating to persistent log (ArrayUnion) for historical tracking
+    if state.get("rating"):
+        firestore_store.append_note(
+            phone,
+            f"rating:{state['rating']}:session:{session_id}",
+        )
 
     # Session summary
     if session_id:
