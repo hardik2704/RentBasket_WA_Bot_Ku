@@ -73,6 +73,16 @@ def _phone_lock(phone: str) -> threading.Lock:
         return lock
 
 
+def _normalize_phone(phone: str) -> str:
+    """Strip country code (91) to get 10-digit Indian phone number."""
+    if not phone:
+        return phone
+    # Remove country code prefix if present
+    if phone.startswith("91") and len(phone) > 10:
+        return phone[2:]
+    return phone
+
+
 def _is_duplicate(wa_message_id: str | None) -> bool:
     if not wa_message_id:
         return False
@@ -157,7 +167,7 @@ def _parse_payload(payload: dict) -> dict[str, Any] | None:
         contacts = value.get("contacts") or [{}]
         push_name = contacts[0].get("profile", {}).get("name") if contacts else None
 
-        from_phone = msg.get("from")
+        from_phone = _normalize_phone(msg.get("from"))
         mtype = msg.get("type")
         wa_id = msg.get("id")
 
