@@ -89,6 +89,8 @@ BTN_WHY_RENTBASKET = {"id": "WHY_RENTBASKET", "title": "Why RentBasket?"}
 BTN_CHECKOUT = {"id": "CHECKOUT", "title": "Checkout"}
 BTN_REVIEWS = {"id": "REVIEWS", "title": "Latest Reviews"}
 BTN_SHARE_LIST = {"id": "SHARE_LIST", "title": "I'll share my list"}
+BTN_LIST_VOICE = {"id": "LIST_VOICE", "title": "List via Voice Note"}
+BTN_VOICE_NOTE = {"id": "VOICE_NOTE", "title": "Voice Note"}
 BTN_DUR_3 = {"id": "DUR_3", "title": "3-Short & Sweet"}
 BTN_DUR_6 = {"id": "DUR_6", "title": "6-Affordable"}
 BTN_RATING_YES = {"id": "RATING_YES", "title": "Yes, great"}
@@ -145,13 +147,11 @@ def _greeting_body(name: str | None) -> str:
     first = (name or "there").split()[0] if name else "there"
     return (
         f"Hi {first},\n"
-        "I'm Ku from RentBasket, your personal rental assistant.\n\n"
+        "I'm Ku from RentBasket, your personal rental assistant.\n"
+        "*Please share the items you're looking for.* I'll share the "
+        "complete cart right away.\n\n"
         "We offer quality furniture and appliances on rent at competitive "
-        "prices, powered by customer service which is best in the market.\n\n"
-        "Please share the items you're looking for.\n\n"
-        "Example : 2x Double Beds, 1x Washing Machine, 1x 5 Seater Sofa\n\n"
-        "You can also send a *Voice Note*.\n\n"
-        "I'll share the complete cart right away."
+        "prices, powered by customer service which is best in the market."
     )
 
 
@@ -177,6 +177,10 @@ def classify_inbound(state: KuState) -> dict[str, Any]:
             branch = "reviews"
         elif i_id == "SHARE_LIST":
             branch = "share_list"
+        elif i_id == "LIST_VOICE":
+            branch = "list_via_voice"
+        elif i_id == "VOICE_NOTE":
+            branch = "voice_note_prompt"
         elif i_id in ("DUR_3", "DUR_6", "DUR_12"):
             state["duration"] = {"DUR_3": 3, "DUR_6": 6, "DUR_12": 12}[i_id]
             branch = "build_cart"
@@ -210,8 +214,11 @@ def classify_inbound(state: KuState) -> dict[str, Any]:
 
 def greeting(state: KuState) -> dict[str, Any]:
     name = state.get("push_name")
-    _queue_buttons(state, _greeting_body(name), [BTN_HOW_RENTING_WORKS])
-    _queue_image(state, CATALOGUE_IMAGE_URL, "Here's our full product catalogue.")
+    _queue_buttons(
+        state,
+        _greeting_body(name),
+        [BTN_HOW_RENTING_WORKS, BTN_SHARE_LIST, BTN_LIST_VOICE],
+    )
     state["stage"] = "GREETED"
     return state
 
@@ -241,13 +248,48 @@ def reviews(state: KuState) -> dict[str, Any]:
 
 
 def share_list(state: KuState) -> dict[str, Any]:
-    """User tapped 'I'll share my list' — prompt them for items and reset to GREETED."""
+    """User tapped 'I'll share my list' — send catalogue + voice note nudge."""
+    _queue_image(
+        state,
+        CATALOGUE_IMAGE_URL,
+        "Great choice! Here's the Product Catalog!\n"
+        "*Please share the items you're looking for.* I'll share the "
+        "complete cart right away.\n\n"
+        "Example : 2x Double Beds, 1x Washing Machine, 1x 5 Seater Sofa",
+    )
+    _queue_buttons(
+        state,
+        "Wanna try sending a Voice Note?",
+        [BTN_VOICE_NOTE],
+    )
+    state["stage"] = "GREETED"
+    return state
+
+
+def list_via_voice(state: KuState) -> dict[str, Any]:
+    """User tapped 'List via Voice Note' — send catalogue + voice prompt caption."""
+    _queue_image(
+        state,
+        CATALOGUE_IMAGE_URL,
+        "Great choice! Here's the Product Catalog!\n"
+        "*Please share a voice note of your preferred items.* I'll share "
+        "the complete cart right away.\n\n"
+        "Example : I want two Double Beds, one Washing Machine, "
+        "one 5 Seater Sofa",
+    )
+    state["stage"] = "GREETED"
+    return state
+
+
+def voice_note_prompt(state: KuState) -> dict[str, Any]:
+    """User tapped 'Voice Note' on the nudge — prompt for a voice note."""
     _queue_text(
         state,
-        "*Please share the items you're looking for.*\n\n"
-        "Example : 2x Double Beds, 1x Washing Machine, 1x 5 Seater Sofa\n\n"
-        "You can also send a *Voice Note*.\n\n"
-        "I'll share the complete cart right away.",
+        "Great choice! Many prefer speaking their cart rather than typing it :)\n\n"
+        "*Please share a voice note of your preferred items.* I'll share "
+        "the complete cart right away.\n\n"
+        "Example : I want two Double Beds, one Washing Machine, "
+        "one 5 Seater Sofa",
     )
     state["stage"] = "GREETED"
     return state
