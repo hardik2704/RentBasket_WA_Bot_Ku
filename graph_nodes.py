@@ -109,6 +109,11 @@ QUESTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+EDIT_RE = re.compile(
+    r"(edit|modify|change|add|remove|update|adjust|redo)",
+    re.IGNORECASE,
+)
+
 FALLBACK_RECOVERY_TEXT = (
     "Maybe I am not able to help you with this, so I would want to give you "
     "5% additional discount and use this link to create your cart! You can "
@@ -196,6 +201,8 @@ def classify_inbound(state: KuState) -> dict[str, Any]:
     elif i_type == "text":
         if GREETING_RE.match(text) and (stage == "NEW" or stage == "GREETED" or not stage):
             branch = "greeting"
+        elif stage in ("CART_SHOWN", "CHECKED_OUT") and EDIT_RE.search(text):
+            branch = "edit_cart"
         elif stage in ("NEW", "GREETED", "ITEMS_CAPTURED", "CART_SHOWN", "CHECKED_OUT"):
             branch = "extract_items"
         else:
@@ -292,6 +299,19 @@ def voice_note_prompt(state: KuState) -> dict[str, Any]:
         "one 5 Seater Sofa",
     )
     state["stage"] = "GREETED"
+    return state
+
+
+def edit_cart(state: KuState) -> dict[str, Any]:
+    """User wants to edit their cart — provide the checkout link to modify."""
+    cart_link = state.get("last_cart_link") or ""
+    _queue_text(
+        state,
+        "No worries, if some products are not matching. You can easily "
+        "modify it from this link:",
+    )
+    if cart_link:
+        _queue_text(state, cart_link, preview_url=True)
     return state
 
 
