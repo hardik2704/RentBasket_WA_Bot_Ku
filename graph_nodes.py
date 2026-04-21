@@ -91,6 +91,8 @@ BTN_REVIEWS = {"id": "REVIEWS", "title": "Latest Reviews"}
 BTN_SHARE_LIST = {"id": "SHARE_LIST", "title": "I'll share my list"}
 BTN_LIST_VOICE = {"id": "LIST_VOICE", "title": "List via Voice Note"}
 BTN_VOICE_NOTE = {"id": "VOICE_NOTE", "title": "Voice Note"}
+BTN_CONTINUE = {"id": "CONTINUE", "title": "Continue"}
+BTN_RESTART = {"id": "RESTART", "title": "RESTART"}
 BTN_DUR_3 = {"id": "DUR_3", "title": "3-Short & Sweet"}
 BTN_DUR_6 = {"id": "DUR_6", "title": "6-Affordable"}
 BTN_RATING_YES = {"id": "RATING_YES", "title": "Yes, great"}
@@ -113,6 +115,8 @@ EDIT_RE = re.compile(
     r"(edit|modify|change|add|remove|update|adjust|redo)",
     re.IGNORECASE,
 )
+
+SALES_RE = re.compile(r"^\s*sales\s*$", re.IGNORECASE)
 
 FALLBACK_RECOVERY_TEXT = (
     "Maybe I am not able to help you with this, so I would want to give you "
@@ -186,6 +190,10 @@ def classify_inbound(state: KuState) -> dict[str, Any]:
             branch = "list_via_voice"
         elif i_id == "VOICE_NOTE":
             branch = "voice_note_prompt"
+        elif i_id == "CONTINUE":
+            branch = "continue_flow"
+        elif i_id == "RESTART":
+            branch = "restart_flow"
         elif i_id in ("DUR_3", "DUR_6", "DUR_12"):
             state["duration"] = {"DUR_3": 3, "DUR_6": 6, "DUR_12": 12}[i_id]
             branch = "build_cart"
@@ -199,7 +207,9 @@ def classify_inbound(state: KuState) -> dict[str, Any]:
     elif i_type == "audio":
         branch = "extract_items"
     elif i_type == "text":
-        if GREETING_RE.match(text) and (stage == "NEW" or stage == "GREETED" or not stage):
+        if SALES_RE.match(text):
+            branch = "sales_activate"
+        elif GREETING_RE.match(text) and (stage == "NEW" or stage == "GREETED" or not stage):
             branch = "greeting"
         elif stage in ("CART_SHOWN", "CHECKED_OUT") and EDIT_RE.search(text):
             branch = "edit_cart"
@@ -297,6 +307,72 @@ def voice_note_prompt(state: KuState) -> dict[str, Any]:
         "the complete cart right away.\n\n"
         "Example : I want two Double Beds, one Washing Machine, "
         "one 5 Seater Sofa",
+    )
+    state["stage"] = "GREETED"
+    return state
+
+
+def sales_activate(state: KuState) -> dict[str, Any]:
+    """User typed 'SALES' — enable the full Order Confirmation cart format."""
+    state["sales_mode"] = True
+    _queue_text(
+        state,
+        "*SALES mode activated.*\n\n"
+        "Your cart will now include the full Order Confirmation with "
+        "taxes, security deposit, and terms & conditions.\n\n"
+        "*Please share the items you're looking for* — text or voice note.\n\n"
+        "Example : 2x Double Beds, 1x Washing Machine, 1x 5 Seater Sofa",
+    )
+    state["stage"] = "GREETED"
+    return state
+
+
+def continue_flow(state: KuState) -> dict[str, Any]:
+    """User tapped 'Continue' on a follow-up — resume based on last stage."""
+    stage = state.get("stage") or "NEW"
+    items = state.get("items") or []
+    cart_link = state.get("last_cart_link")
+
+    if stage == "CHECKED_OUT" and cart_link:
+        _queue_text(state, "Welcome back! Here's your cart link to complete checkout:")
+        _queue_text(state, cart_link, preview_url=True)
+    elif stage == "CART_SHOWN" and cart_link:
+        _queue_text(state, "Welcome back! Here's where we left off:")
+        _queue_text(state, cart_link, preview_url=True)
+        _queue_buttons(state, "Ready to proceed?", [BTN_CHECKOUT, BTN_REVIEWS])
+    elif stage == "ITEMS_CAPTURED" and items:
+        summary = ", ".join(f"{it.get('qty',1)}x {it.get('name','')}" for it in items)
+        _queue_text(state, f"Welcome back! You had these items: {summary}")
+        _queue_buttons(
+            state,
+            "*Step 1 of 3: Duration*\n\nYour expected rental duration in months:",
+            [BTN_DUR_3, BTN_DUR_6, BTN_DUR_12],
+        )
+    else:
+        _queue_buttons(
+            state,
+            "Welcome back! *Please share the items you're looking for.* "
+            "I'll share the complete cart right away.",
+            [BTN_SHARE_LIST, BTN_LIST_VOICE],
+        )
+    return state
+
+
+def restart_flow(state: KuState) -> dict[str, Any]:
+    """User tapped 'RESTART' — clear their session and show greeting."""
+    state["items"] = []
+    state["duration"] = None
+    state["duration_unit"] = None
+    state["cart"] = None
+    state["last_cart_link"] = None
+    state["sales_mode"] = False
+    state["stage"] = "NEW"
+
+    name = state.get("push_name")
+    _queue_buttons(
+        state,
+        _greeting_body(name),
+        [BTN_HOW_RENTING_WORKS, BTN_SHARE_LIST, BTN_LIST_VOICE],
     )
     state["stage"] = "GREETED"
     return state
@@ -418,9 +494,14 @@ def build_cart_node(state: KuState) -> dict[str, Any]:
     state["last_cart_link"] = cart_builder.build_cart_link(items, int(duration), unit=unit)
     state["stage"] = "CART_SHOWN"
 
+    if state.get("sales_mode"):
+        cart_text = cart_builder.format_sales_cart(cart, unit=unit)
+    else:
+        cart_text = cart_builder.format_cart_text(cart, unit=unit)
+
     _queue_buttons(
         state,
-        cart_builder.format_cart_text(cart, unit=unit),
+        cart_text,
         [BTN_CHECKOUT, BTN_REVIEWS],
     )
     return state
@@ -576,6 +657,8 @@ def write_firestore(state: KuState) -> dict[str, Any]:
         highlights["last_cart_total_saving"] = c.get("total_saving")
     if state.get("last_cart_link"):
         highlights["last_cart_link"] = state["last_cart_link"]
+    if state.get("sales_mode"):
+        highlights["sales_mode"] = True
 
     if highlights:
         firestore_store.update_highlights(phone, highlights)

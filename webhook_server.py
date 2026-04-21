@@ -20,6 +20,7 @@ from typing import Any
 from flask import Flask, abort, jsonify, request, send_from_directory
 
 import firestore_store
+import followup_scheduler
 import whatsapp_client
 from config import (
     CATALOGUE_IMAGE_PATH,
@@ -257,6 +258,7 @@ def _handle_async(parsed: dict[str, Any]) -> None:
             "duration": highlights.get("preferred_duration_months"),
             "duration_unit": highlights.get("preferred_duration_unit"),
             "last_cart_link": highlights.get("last_cart_link"),
+            "sales_mode": bool(highlights.get("sales_mode")),
             "reply": [],
         }
 
@@ -290,6 +292,12 @@ def _handle_async(parsed: dict[str, Any]) -> None:
                 whatsapp_client.mark_read(wa_id)
             except Exception:
                 pass
+
+        # Re-arm 30-min + 19-hr follow-up timers on every inbound message
+        try:
+            followup_scheduler.reset_timers(phone)
+        except Exception as e:
+            log.warning("followup timer reset failed for %s: %s", phone, e)
 
         # Flush outbound queue
         for op in new_state.get("reply") or []:

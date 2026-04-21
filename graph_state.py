@@ -51,3 +51,7 @@ class KuState(TypedDict, total=False):
 
     # Routing
     branch: str | None               # set by classify_inbound
+
+    # SALES mode — activated by user typing "SALES"; switches cart format
+    # to the full Order Confirmation layout (T&C, security deposit, etc.)
+    sales_mode: bool
