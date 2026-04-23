@@ -147,8 +147,8 @@ def format_cart_text(cart: dict, unit: str = "months") -> str:
     if duration >= 12:
         msg += (
             f"\n\nPay upfront for the duration and it would cost "
-            f"Rs. {_inr(cart['upfront_monthly_total'])}/mo  "
-            f"(extra {UPFRONT_PCT}% off — save Rs. {_inr(cart['upfront_total_saving'])} total)"
+            f"Rs. {_inr(cart['upfront_monthly_total'])}/mo, "
+            f"extra {UPFRONT_PCT}% off, saving Rs. {_inr(cart['upfront_total_saving'])} total"
         )
 
     return msg
