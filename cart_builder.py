@@ -181,65 +181,6 @@ def build_cart_link(items: list[dict], duration: int, *, unit: str = "months", f
     )
 
 
-def format_sales_cart(cart: dict, unit: str = "months") -> str:
-    """Full Order Confirmation format (SALES mode) — mirrors the website.
-
-    Adds GST, security deposit, delivery/installation promo, and T&C.
-    """
-    duration = cart["duration"]
-    unit_str = "/mo" if unit == "months" else ""
-
-    order_lines = []
-    for line in cart["lines"]:
-        qty = line["qty"]
-        name = line["name"]
-        orig = line["mrp_per_unit"]
-        disc = line["disc_per_unit"]
-        qty_label = f"{qty}x" if qty > 1 else "1x"
-        order_lines.append(
-            f"• {qty_label} {name} ({duration} {unit})\n"
-            f"  ~Rs. {_inr(orig)}{unit_str}~ *Rs. {_inr(disc)}{unit_str}* + GST"
-        )
-
-    total_disc = cart["disc_monthly_total"]
-    total_savings = cart["saving_per_month"]
-    gst = int(round(total_disc * 0.18))
-    net_monthly = total_disc + gst
-
-    transport = 400
-    installation = 500
-    security = min(int(round(total_disc * 2)), 15000)
-    net_first_month = security + net_monthly
-
-    sep = "\u2501" * 20  # ━━━━━
-
-    return (
-        f"*Order Confirmation*\n"
-        f"{sep}\n\n"
-        f"*Order Details*\n"
-        + "\n".join(order_lines) +
-        f"\n\n{sep}\n"
-        f"*Monthly Rent*\n"
-        f"Rent          Rs. {_inr(total_disc)}/mo\n"
-        f"GST (18%)     Rs. {_inr(gst)}/mo\n"
-        f"*Net Monthly  Rs. {_inr(net_monthly)}/mo*\n\n"
-        f"{sep}\n"
-        f"*One Time Charges*\n"
-        f"Security Deposit   Rs. {_inr(security)} _(refundable)_\n"
-        f"Delivery           ~Rs. {_inr(transport)}~ Rs. 0\n"
-        f"Installation       ~Rs. {_inr(installation)}~ Rs. 0\n"
-        f"*Net Payable (1st Month)   Rs. {_inr(net_first_month)}*\n\n"
-        f"{sep}\n"
-        f"You save *Rs. {_inr(total_savings)}/month* x {duration} {unit} = "
-        f"*Rs. {_inr(total_savings * duration)}* on this cart!\n\n"
-        f"*Terms & Conditions*\n"
-        f"- Products are in mint condition\n"
-        f"- Standard maintenance included\n"
-        f"- Free shipping & standard installation\n"
-        f"- Complete KYC before delivery"
-    )
-
-
 def format_items_found(items: list[dict]) -> str:
     """'Got it! I found: <1x X, 2x Y>.' style confirmation line."""
     if not items:
@@ -256,7 +197,6 @@ def format_items_found(items: list[dict]) -> str:
 __all__ = [
     "build_cart",
     "format_cart_text",
-    "format_sales_cart",
     "build_cart_link",
     "format_items_found",
     "DISCOUNT_PCT",

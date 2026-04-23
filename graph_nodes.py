@@ -116,8 +116,6 @@ EDIT_RE = re.compile(
     re.IGNORECASE,
 )
 
-SALES_RE = re.compile(r"^\s*sales\s*$", re.IGNORECASE)
-
 FALLBACK_RECOVERY_TEXT = (
     "Maybe I am not able to help you with this, so I would want to give you "
     "5% additional discount and use this link to create your cart! You can "
@@ -207,9 +205,7 @@ def classify_inbound(state: KuState) -> dict[str, Any]:
     elif i_type == "audio":
         branch = "extract_items"
     elif i_type == "text":
-        if SALES_RE.match(text):
-            branch = "sales_activate"
-        elif GREETING_RE.match(text) and (stage == "NEW" or stage == "GREETED" or not stage):
+        if GREETING_RE.match(text) and (stage == "NEW" or stage == "GREETED" or not stage):
             branch = "greeting"
         elif stage in ("CART_SHOWN", "CHECKED_OUT") and EDIT_RE.search(text):
             branch = "edit_cart"
@@ -495,7 +491,7 @@ def build_cart_node(state: KuState) -> dict[str, Any]:
     state["stage"] = "CART_SHOWN"
 
     if state.get("sales_mode"):
-        cart_text = cart_builder.format_sales_cart(cart, unit=unit)
+        cart_text = cart_builder.format_sales_draft_cart(cart, unit=unit)
     else:
         cart_text = cart_builder.format_cart_text(cart, unit=unit)
 

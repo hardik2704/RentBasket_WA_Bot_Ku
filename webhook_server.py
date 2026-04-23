@@ -258,7 +258,6 @@ def _handle_async(parsed: dict[str, Any]) -> None:
             "duration": highlights.get("preferred_duration_months"),
             "duration_unit": highlights.get("preferred_duration_unit"),
             "last_cart_link": highlights.get("last_cart_link"),
-            "sales_mode": bool(highlights.get("sales_mode")),
             "reply": [],
         }
 
