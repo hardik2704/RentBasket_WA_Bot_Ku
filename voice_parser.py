@@ -21,7 +21,7 @@ from functools import lru_cache
 from typing import Any
 
 from config import LLM_EXTRACTOR_MODEL, OPENAI_API_KEY, WHISPER_MODEL
-from products import id_to_name
+from data.products import id_to_name
 
 log = logging.getLogger(__name__)
 

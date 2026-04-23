@@ -554,16 +554,21 @@ def _fallback_inline(state: KuState) -> None:
 
 
 def fallback_discount(state: KuState) -> dict[str, Any]:
-    # Feature 1: If the user asked a question, try the KB first
+    # Feature 1: Try to answer from KB (product data + policies + FAQs)
     inbound = state.get("inbound") or {}
     text = (inbound.get("text") or "").strip()
-    if text and QUESTION_RE.match(text):
+    kb_answered = False
+
+    if text:
+        # Try KB semantic search for any text input (questions, product
+        # queries, policy lookups, etc.)
         kb_answer = kb_retriever.search(text, k=3)
         if kb_answer:
             state["kb_hit"] = kb_answer
             _queue_text(state, kb_answer)
+            kb_answered = True
 
-    # Feature 2: 5% discount link + sales contact
+    # Feature 2: 5% discount link + sales contact (always offered as fallback)
     _fallback_inline(state)
     _queue_text(state, SALES_CONTACT_TEXT)
     # Stage unchanged — we don't want to lock the user out of recovery.

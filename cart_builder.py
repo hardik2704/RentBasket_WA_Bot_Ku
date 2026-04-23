@@ -20,7 +20,7 @@ from config import (
     RENTBASKET_JWT,
     UPFRONT_PCT,
 )
-from products import apply_discount, calculate_rent, id_to_name
+from data.products import apply_discount, calculate_rent, id_to_name
 
 log = logging.getLogger(__name__)
 

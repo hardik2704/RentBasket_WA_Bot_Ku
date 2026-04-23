@@ -44,7 +44,7 @@ def _build() -> StateGraph:
     g.add_node("duration_prompt", gn.duration_prompt)
     g.add_node("build_cart", gn.build_cart_node)
     g.add_node("checkout", gn.checkout)
-    g.add_node("rating", gn.rating)
+    g.add_node("handle_rating", gn.rating)
     g.add_node("fallback_discount", gn.fallback_discount)
     g.add_node("write_firestore", gn.write_firestore)
 
@@ -66,7 +66,7 @@ def _build() -> StateGraph:
             "extract_items": "extract_items",
             "build_cart": "build_cart",
             "checkout": "checkout",
-            "rating": "rating",
+            "rating": "handle_rating",
             "fallback_discount": "fallback_discount",
         },
     )
@@ -84,7 +84,7 @@ def _build() -> StateGraph:
     for node in ("greeting", "how_works", "why_rentbasket", "reviews", "share_list",
                  "list_via_voice", "voice_note_prompt", "edit_cart",
                  "continue_flow", "restart_flow", "duration_prompt",
-                 "build_cart", "checkout", "rating", "fallback_discount"):
+                 "build_cart", "checkout", "handle_rating", "fallback_discount"):
         g.add_edge(node, "write_firestore")
     g.add_edge("write_firestore", END)
 
